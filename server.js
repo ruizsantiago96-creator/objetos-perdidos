@@ -71,6 +71,39 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/uploads', express.static(uploadsDir));
 
+// GET /api/objetos?q=texto
+app.get('/api/objetos', (req, res, next) => {
+  try {
+    const rawQ = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+
+    if (rawQ) {
+      // Escapar caracteres especiales para LIKE: \, %, _
+      const escapedQ = rawQ.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
+      const pattern = `%${escapedQ}%`;
+
+      const stmt = db.prepare(`
+        SELECT id, descripcion, ubicacion, foto, contacto, tipo_contacto, creado_en
+        FROM objetos
+        WHERE devuelto = 0 AND descripcion LIKE ? ESCAPE '\\'
+        ORDER BY creado_en DESC, id DESC
+      `);
+      const filas = stmt.all(pattern);
+      return res.json(filas);
+    } else {
+      const stmt = db.prepare(`
+        SELECT id, descripcion, ubicacion, foto, contacto, tipo_contacto, creado_en
+        FROM objetos
+        WHERE devuelto = 0
+        ORDER BY creado_en DESC, id DESC
+      `);
+      const filas = stmt.all();
+      return res.json(filas);
+    }
+  } catch (err) {
+    next(err);
+  }
+});
+
 // POST /api/objetos
 app.post('/api/objetos', (req, res, next) => {
   upload.single('foto')(req, res, (err) => {
