@@ -1,8 +1,67 @@
-// app.js - Sprint 1: Ver muro y búsqueda
+// app.js - Muro, modal y reporte
 
 const muro = document.getElementById('muro');
 const mensajeVacio = document.getElementById('mensaje-vacio');
 const campoBusqueda = document.getElementById('campo-busqueda');
+
+// Elementos del modal
+const btnSubirReporte = document.getElementById('btn-subir-reporte');
+const modalReporte = document.getElementById('modal-reporte');
+const btnCancelar = document.getElementById('btn-cancelar');
+const formReporte = document.getElementById('form-reporte');
+const btnPublicar = document.getElementById('btn-publicar');
+
+const campoDescripcion = document.getElementById('campo-descripcion');
+const campoUbicacion = document.getElementById('campo-ubicacion');
+const campoFoto = document.getElementById('campo-foto');
+const campoContacto = document.getElementById('campo-contacto');
+
+const errorDescripcion = document.getElementById('error-descripcion');
+const errorUbicacion = document.getElementById('error-ubicacion');
+const errorFoto = document.getElementById('error-foto');
+const errorContacto = document.getElementById('error-contacto');
+
+// Manejo seguro de localStorage para misReportes
+function obtenerMisReportes() {
+  try {
+    const raw = localStorage.getItem('misReportes');
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (err) {
+    console.error('Error al leer misReportes de localStorage:', err);
+    return [];
+  }
+}
+
+function guardarReporteLocal(id, token) {
+  try {
+    const lista = obtenerMisReportes();
+    lista.push({ id, token });
+    localStorage.setItem('misReportes', JSON.stringify(lista));
+  } catch (err) {
+    console.error('Error al guardar en misReportes:', err);
+  }
+}
+
+function limpiarErrores() {
+  errorDescripcion.textContent = '';
+  errorUbicacion.textContent = '';
+  errorFoto.textContent = '';
+  errorContacto.textContent = '';
+}
+
+function abrirModal() {
+  limpiarErrores();
+  modalReporte.style.display = 'flex';
+  campoDescripcion.focus();
+}
+
+function cerrarModal() {
+  modalReporte.style.display = 'none';
+  formReporte.reset();
+  limpiarErrores();
+}
 
 // Formatear fecha relativa usando hora UTC de SQLite
 function formatoFechaRelativa(valor) {
@@ -86,6 +145,56 @@ async function cargarMuro(textoBusqueda = '') {
   }
 }
 
+// Validación básica en el navegador
+function validarFormularioNavegador() {
+  limpiarErrores();
+  let valido = true;
+
+  const desc = campoDescripcion.value.trim();
+  if (desc.length < 5 || desc.length > 200) {
+    errorDescripcion.textContent = 'La descripción debe tener entre 5 y 200 caracteres';
+    valido = false;
+  }
+
+  const ubic = campoUbicacion.value.trim();
+  if (ubic.length < 3 || ubic.length > 100) {
+    errorUbicacion.textContent = 'La ubicación debe tener entre 3 y 100 caracteres';
+    valido = false;
+  }
+
+  if (!campoFoto.files || campoFoto.files.length === 0) {
+    errorFoto.textContent = 'La foto es obligatoria';
+    valido = false;
+  } else {
+    const archivo = campoFoto.files[0];
+    const tiposPermitidos = ['image/jpeg', 'image/png', 'image/webp'];
+    if (!tiposPermitidos.includes(archivo.type)) {
+      errorFoto.textContent = 'Solo se permiten imágenes JPG, PNG o WEBP';
+      valido = false;
+    } else if (archivo.size > 5 * 1024 * 1024) {
+      errorFoto.textContent = 'El archivo excede el tamaño máximo de 5 MB';
+      valido = false;
+    }
+  }
+
+  const cont = campoContacto.value.trim();
+  if (cont.includes('@')) {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(cont)) {
+      errorContacto.textContent = 'Escribe un correo válido o un WhatsApp de 10 dígitos';
+      valido = false;
+    }
+  } else {
+    const phoneCleaned = cont.replace(/[\s\-\(\)]/g, '');
+    if (!/^\d{10}$/.test(phoneCleaned)) {
+      errorContacto.textContent = 'Escribe un correo válido o un WhatsApp de 10 dígitos';
+      valido = false;
+    }
+  }
+
+  return valido;
+}
+
 // Iniciar al cargar página
 document.addEventListener('DOMContentLoaded', () => {
   cargarMuro();
@@ -97,5 +206,57 @@ document.addEventListener('DOMContentLoaded', () => {
     temporizadorBusqueda = setTimeout(() => {
       cargarMuro(e.target.value);
     }, 300);
+  });
+
+  // Eventos del modal
+  btnSubirReporte.addEventListener('click', abrirModal);
+  btnCancelar.addEventListener('click', cerrarModal);
+
+  // Cerrar modal al hacer clic en el fondo
+  modalReporte.addEventListener('click', (e) => {
+    if (e.target === modalReporte) {
+      cerrarModal();
+    }
+  });
+
+  // Enviar formulario
+  formReporte.addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    if (!validarFormularioNavegador()) {
+      return;
+    }
+
+    btnPublicar.disabled = true;
+    btnPublicar.textContent = 'Publicando...';
+
+    try {
+      const formData = new FormData(formReporte);
+      const res = await fetch('/api/objetos', {
+        method: 'POST',
+        body: formData
+      });
+
+      const data = await res.json();
+
+      if (res.status === 201) {
+        guardarReporteLocal(data.id, data.token);
+        cerrarModal();
+        cargarMuro();
+      } else if (res.status === 400 && data.campos) {
+        if (data.campos.descripcion) errorDescripcion.textContent = data.campos.descripcion;
+        if (data.campos.ubicacion) errorUbicacion.textContent = data.campos.ubicacion;
+        if (data.campos.foto) errorFoto.textContent = data.campos.foto;
+        if (data.campos.contacto) errorContacto.textContent = data.campos.contacto;
+      } else {
+        alert(data.error || 'Ocurrió un error al publicar');
+      }
+    } catch (err) {
+      console.error('Error al enviar reporte:', err);
+      alert('Error de conexión con el servidor');
+    } finally {
+      btnPublicar.disabled = false;
+      btnPublicar.textContent = 'Publicar';
+    }
   });
 });
