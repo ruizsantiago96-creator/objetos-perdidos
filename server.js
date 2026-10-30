@@ -104,6 +104,36 @@ app.get('/api/objetos', (req, res, next) => {
   }
 });
 
+// PATCH /api/objetos/:id/devuelto
+app.patch('/api/objetos/:id/devuelto', (req, res, next) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) {
+      return res.status(404).json({ error: 'Objeto no encontrado' });
+    }
+
+    const token = req.body && typeof req.body.token === 'string' ? req.body.token.trim() : '';
+
+    const stmtSelect = db.prepare('SELECT id, token, devuelto FROM objetos WHERE id = ?');
+    const objeto = stmtSelect.get(id);
+
+    if (!objeto) {
+      return res.status(404).json({ error: 'Objeto no encontrado' });
+    }
+
+    if (objeto.token !== token) {
+      return res.status(403).json({ error: 'No tienes permiso para esta acción' });
+    }
+
+    const stmtUpdate = db.prepare('UPDATE objetos SET devuelto = 1 WHERE id = ?');
+    stmtUpdate.run(id);
+
+    return res.status(200).json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // POST /api/objetos
 app.post('/api/objetos', (req, res, next) => {
   upload.single('foto')(req, res, (err) => {
