@@ -1,7 +1,9 @@
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const express = require('express');
 const Database = require('better-sqlite3');
+const multer = require('multer');
 
 const app = express();
 const PORT = 3000;
@@ -31,7 +33,37 @@ db.exec(`
   );
 `);
 
-// Middleware para JSON y URL-encoded si se necesitan
+// Configurar multer para subida de fotos
+const allowedMimes = ['image/jpeg', 'image/png', 'image/webp'];
+const allowedExts = ['.jpg', '.jpeg', '.png', '.webp'];
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, uploadsDir);
+  },
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    const randomNum = Math.floor(10000 + Math.random() * 90000);
+    cb(null, `${Date.now()}-${randomNum}${ext}`);
+  }
+});
+
+const fileFilter = (req, file, cb) => {
+  const ext = path.extname(file.originalname).toLowerCase();
+  if (!allowedMimes.includes(file.mimetype) || !allowedExts.includes(ext)) {
+    const err = new Error('Solo se permiten imágenes JPG, PNG o WEBP');
+    err.code = 'INVALID_FILE_TYPE';
+    return cb(err);
+  }
+  cb(null, true);
+};
+
+const upload = multer({
+  storage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB
+  fileFilter
+});
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -39,8 +71,135 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/uploads', express.static(uploadsDir));
 
-app.listen(PORT, () => {
-  console.log(`Servidor en http://localhost:${PORT}`);
+// POST /api/objetos
+app.post('/api/objetos', (req, res, next) => {
+  upload.single('foto')(req, res, (err) => {
+    if (err) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({
+          error: 'Datos inválidos',
+          campos: { foto: 'El archivo excede el tamaño máximo de 5 MB' }
+        });
+      }
+      if (err.code === 'INVALID_FILE_TYPE') {
+        return res.status(400).json({
+          error: 'Datos inválidos',
+          campos: { foto: 'Solo se permiten imágenes JPG, PNG o WEBP' }
+        });
+      }
+      return res.status(400).json({
+        error: 'Datos inválidos',
+        campos: { foto: err.message || 'Error al procesar el archivo' }
+      });
+    }
+
+    const campos = {};
+
+    // Validar descripción
+    const rawDescripcion = typeof req.body.descripcion === 'string' ? req.body.descripcion.trim() : '';
+    if (!rawDescripcion || rawDescripcion.length < 5 || rawDescripcion.length > 200) {
+      campos.descripcion = 'La descripción debe tener entre 5 y 200 caracteres';
+    }
+
+    // Validar ubicación
+    const rawUbicacion = typeof req.body.ubicacion === 'string' ? req.body.ubicacion.trim() : '';
+    if (!rawUbicacion || rawUbicacion.length < 3 || rawUbicacion.length > 100) {
+      campos.ubicacion = 'La ubicación debe tener entre 3 y 100 caracteres';
+    }
+
+    // Validar contacto
+    const rawContacto = typeof req.body.contacto === 'string' ? req.body.contacto.trim() : '';
+    let tipoContacto = '';
+    let contactoFinal = '';
+
+    if (rawContacto.includes('@')) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (emailRegex.test(rawContacto)) {
+        tipoContacto = 'correo';
+        contactoFinal = rawContacto.toLowerCase();
+      }
+    } else {
+      const cleanedPhone = rawContacto.replace(/[\s\-\(\)]/g, '');
+      if (/^\d{10}$/.test(cleanedPhone)) {
+        tipoContacto = 'whatsapp';
+        contactoFinal = cleanedPhone;
+      }
+    }
+
+    if (!tipoContacto) {
+      campos.contacto = 'Escribe un correo válido o un WhatsApp de 10 dígitos';
+    }
+
+    // Validar foto obligatoria
+    if (!req.file) {
+      campos.foto = 'La foto es obligatoria';
+    }
+
+    // Si hay errores de validación
+    if (Object.keys(campos).length > 0) {
+      if (req.file && fs.existsSync(req.file.path)) {
+        try {
+          fs.unlinkSync(req.file.path);
+        } catch (unlinkErr) {
+          console.error('Error al borrar archivo tras validación fallida:', unlinkErr);
+        }
+      }
+      return res.status(400).json({
+        error: 'Datos inválidos',
+        campos
+      });
+    }
+
+    // Inserción en base de datos
+    try {
+      const token = crypto.randomUUID();
+      const stmt = db.prepare(`
+        INSERT INTO objetos (descripcion, ubicacion, foto, contacto, tipo_contacto, token, devuelto)
+        VALUES (?, ?, ?, ?, ?, ?, 0)
+      `);
+      const info = stmt.run(
+        rawDescripcion,
+        rawUbicacion,
+        req.file.filename,
+        contactoFinal,
+        tipoContacto,
+        token
+      );
+
+      return res.status(201).json({
+        id: Number(info.lastInsertRowid),
+        token
+      });
+    } catch (insertErr) {
+      if (req.file && fs.existsSync(req.file.path)) {
+        try {
+          fs.unlinkSync(req.file.path);
+        } catch (unlinkErr) {
+          console.error('Error al borrar archivo tras error en inserción:', unlinkErr);
+        }
+      }
+      return next(insertErr);
+    }
+  });
 });
+
+// Middleware final para errores 500
+app.use((err, req, res, next) => {
+  if (req.file && fs.existsSync(req.file.path)) {
+    try {
+      fs.unlinkSync(req.file.path);
+    } catch (unlinkErr) {
+      console.error('Error al borrar archivo huérfano en middleware de error:', unlinkErr);
+    }
+  }
+  console.error(err);
+  res.status(500).json({ error: 'Error interno' });
+});
+
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`Servidor en http://localhost:${PORT}`);
+  });
+}
 
 module.exports = { app, db };
