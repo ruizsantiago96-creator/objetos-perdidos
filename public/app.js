@@ -44,6 +44,16 @@ function guardarReporteLocal(id, token) {
   }
 }
 
+function eliminarReporteLocal(id) {
+  try {
+    let lista = obtenerMisReportes();
+    lista = lista.filter(r => r.id !== id);
+    localStorage.setItem('misReportes', JSON.stringify(lista));
+  } catch (err) {
+    console.error('Error al eliminar de misReportes:', err);
+  }
+}
+
 function limpiarErrores() {
   errorDescripcion.textContent = '';
   errorUbicacion.textContent = '';
@@ -143,6 +153,46 @@ function renderizarMuro(objetos) {
       btnContactar.href = `mailto:${obj.contacto}?subject=${encodeURIComponent('Objeto perdido')}&body=${encodeURIComponent(mensajeTexto)}`;
     }
     acciones.appendChild(btnContactar);
+
+    // 6. Botón Marcar como devuelto (solo si el token existe en localStorage)
+    const misReportes = obtenerMisReportes();
+    const miReporte = misReportes.find((r) => r.id === obj.id);
+
+    if (miReporte && miReporte.token) {
+      const btnDevuelto = document.createElement('button');
+      btnDevuelto.type = 'button';
+      btnDevuelto.className = 'btn-secundario btn-devuelto';
+      btnDevuelto.textContent = 'Marcar como devuelto';
+
+      btnDevuelto.addEventListener('click', async () => {
+        if (confirm('¿Marcar como devuelto?')) {
+          try {
+            const res = await fetch(`/api/objetos/${obj.id}/devuelto`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ token: miReporte.token })
+            });
+
+            const data = await res.json();
+
+            if (res.ok && data.ok) {
+              eliminarReporteLocal(obj.id);
+              tarjeta.remove();
+              if (muro.children.length === 0) {
+                mensajeVacio.style.display = 'block';
+              }
+            } else {
+              alert(data.error || 'Error al marcar como devuelto');
+            }
+          } catch (err) {
+            console.error('Error al marcar como devuelto:', err);
+            alert('Error de conexión con el servidor');
+          }
+        }
+      });
+
+      acciones.appendChild(btnDevuelto);
+    }
 
     contenido.appendChild(acciones);
     tarjeta.appendChild(contenido);
