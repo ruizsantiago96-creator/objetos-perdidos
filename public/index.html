@@ -2,9 +2,24 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Objetos Perdidos – Tec Campus Poniente</title>
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <h1>Objetos Perdidos – Tec Campus Poniente</h1>
+  <header class="header">
+    <h1 class="header-titulo">Objetos Perdidos – Tec Campus Poniente</h1>
+    <div class="header-acciones">
+      <input type="text" id="campo-busqueda" placeholder="Buscar objeto..." autocomplete="off">
+      <button id="btn-subir-reporte" type="button">Subir reporte</button>
+    </div>
+  </header>
+
+  <main class="contenedor-principal">
+    <div id="muro" class="muro"></div>
+    <div id="mensaje-vacio" class="mensaje-vacio" style="display: none;">No hay objetos que coincidan</div>
+  </main>
+
+  <script src="app.js"></script>
 </body>
 </html>
