@@ -89,4 +89,13 @@ async function cargarMuro(textoBusqueda = '') {
 // Iniciar al cargar página
 document.addEventListener('DOMContentLoaded', () => {
   cargarMuro();
+
+  // Búsqueda con debounce de 300 ms
+  let temporizadorBusqueda = null;
+  campoBusqueda.addEventListener('input', (e) => {
+    clearTimeout(temporizadorBusqueda);
+    temporizadorBusqueda = setTimeout(() => {
+      cargarMuro(e.target.value);
+    }, 300);
+  });
 });
