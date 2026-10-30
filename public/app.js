@@ -125,6 +125,26 @@ function renderizarMuro(objetos) {
     fecha.textContent = formatoFechaRelativa(obj.creado_en);
     contenido.appendChild(fecha);
 
+    // Contenedor de acciones
+    const acciones = document.createElement('div');
+    acciones.className = 'tarjeta-acciones';
+
+    // 5. Botón Contactar
+    const btnContactar = document.createElement('a');
+    btnContactar.className = 'btn-principal btn-contactar';
+    btnContactar.textContent = 'Contactar';
+    btnContactar.target = '_blank';
+    btnContactar.rel = 'noopener noreferrer';
+
+    const mensajeTexto = `Hola, creo que el objeto "${obj.descripcion}" que publicaste es mío`;
+    if (obj.tipo_contacto === 'whatsapp') {
+      btnContactar.href = `https://wa.me/52${obj.contacto}?text=${encodeURIComponent(mensajeTexto)}`;
+    } else {
+      btnContactar.href = `mailto:${obj.contacto}?subject=${encodeURIComponent('Objeto perdido')}&body=${encodeURIComponent(mensajeTexto)}`;
+    }
+    acciones.appendChild(btnContactar);
+
+    contenido.appendChild(acciones);
     tarjeta.appendChild(contenido);
     muro.appendChild(tarjeta);
   });
